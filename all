@@ -1,0 +1,101 @@
+import gevent
+import gevent.monkey
+
+gevent.monkey.patch_all()
+import requests
+import re
+import json
+from lxml import etree
+import math
+import time
+import csv
+from collections import Counter
+import pymysql
+from urllib import parse
+
+def down_html(key_word, page_id=0):
+    """
+    @param key_word:关键词
+    @param page_id:页码
+    @return:请求下载网页源代码
+    """
+    url = "https://s.weibo.com/video/{}&typeall=1&hasvideo=1&tw=video".format(key_word)
+    headers = {
+        # "cookie":"tt_webid=6766497904494118414; WEATHER_CITY=%E5%8C%97%E4%BA%AC; tt_webid=6766497904494118414; csrftoken=ed63c0e36a8fe5b183e7522dbf81e2b7; __tasessionId=ioqmxe5ot1577081777567; s_v_web_id=6222e2b44703bfe5ebed1e6893dbdce5; sso_uid_tt=aabce97ac53cd575f7637300e0d73ae3; toutiao_sso_user=604483c4171ec9ac22cd27ed825c3e7c; sid_guard=b5999c0b8f8fd80385c756a46f0b3a34%7C1577086763%7C5184000%7CFri%2C+21-Feb-2020+07%3A39%3A23+GMT; uid_tt=a7d33bd0ffc409d6f2717b02edc6e850; sid_tt=b5999c0b8f8fd80385c756a46f0b3a34; sessionid=b5999c0b8f8fd80385c756a46f0b3a34; cp=5E0046FFD3477E1",
+        # "Cookie":"_uuid=32C8C785-5AC1-D195-83A3-9B56C8759BDE10794infoc; buvid3=6E75F6FE-E083-4F17-BFEB-2A03EAFF25B0190965infoc; INTVER=1; CURRENT_FNVAL=16; sid=apwgegc4; stardustvideo=1; LIVE_BUVID=AUTO2515770689769746; rpdid=|(u)~l~Y))u)0J'ul~~|Y)m~Y; laboratory=1-1",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/69.0.3497.100 Safari/537.36"
+
+    }
+    html = requests.get(url, headers=headers, timeout=10, verify=False).text
+    # print(html)
+    return etree.HTML(html)
+
+
+def down_detail(key_word):
+    page_html = down_html(key_word)
+    for j in range(len(page_html.xpath('//div[@id="pl_feedlist_index"]//div[@class="card-wrap"]/@mid'))):
+        # try:
+
+        # mid = page_html.xpath('//div[@id="pl_feedlist_index"]//div[@class="card-wrap"]/@mid')[j]
+        user = page_html.xpath('//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="card-feed"]//div[@class="info"]/div[2]/a/text()'.format(j+1))[0]
+        content_url = "http:" + page_html.xpath('//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="content"]/p[@class="from"]/a[1]/@href'.format(j+1))[0]
+        # user_img = "http:" + page_html.xpath('//div[@class="card-feed"]//div[@class="avator"]//img/@src')[j]
+        user_id = re.findall('com/(.*?)\?',
+                             page_html.xpath('//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="card-feed"]//div[@class="info"]/div[2]/a[1]/@href'.format(j+1))[0])[
+            0]
+        user_link = "https://weibo.com/u/{}".format(user_id)
+        print(user_link)
+        if re.findall('\d+', page_html.xpath(
+                '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="card-act"]//li[2]/a/text()'.format(
+                        j + 1))[0]):
+            repost_user_reposts_count = \
+                re.findall('(\d+)', page_html.xpath(
+                    '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="card-act"]//li[2]/a/text()'.format(
+                        j + 1))[0])[0]
+        else:
+            repost_user_reposts_count = 0
+        if re.findall('\d+', page_html.xpath(
+                '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="card-act"]//li[3]/a/text()'.format(
+                        j + 1))[0]):
+            repost_user_comments_count = \
+                re.findall('(\d+)', page_html.xpath(
+                    '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="card-act"]//li[3]/a/text()'.format(
+                        j + 1))[0])[0]
+        else:
+            repost_user_comments_count = 0
+        if page_html.xpath(
+                '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="card-act"]//li[4]/a/em/text()'.format(
+                    j + 1)):
+            repost_user_stars_count = page_html.xpath(
+                '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="card-act"]//li[4]/a/em/text()'.format(
+                    j + 1))[0]
+        else:
+            repost_user_stars_count = 0
+        user_text1 = page_html.xpath(
+            '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//p[@class="txt"]'.format(j + 1))[0]
+        # user_text = user_text1[0].xpath('string(.)').strip()
+        quotedMessage = user_text1.xpath('string(.)').strip()
+        vedio_url = "https:"+parse.unquote(re.findall('video_src=(.*)', page_html.xpath(
+                '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="thumbnail"]/a/@action-data'.format(
+                        j + 1))[0])[0])
+        if "https" not in parse.unquote(re.findall('cover_img=(.*?)&', page_html.xpath(
+                '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="thumbnail"]/a/@action-data'.format(
+                        j + 1))[0])[0]):
+            poster_url = "https:"+parse.unquote(re.findall('cover_img=(.*?)&', page_html.xpath(
+                    '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="thumbnail"]/a/@action-data'.format(
+                            j + 1))[0])[0])
+        else:
+            poster_url = parse.unquote(re.findall('cover_img=(.*?)&', page_html.xpath(
+                '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="thumbnail"]/a/@action-data'.format(
+                    j + 1))[0])[0])
+        # time_cost = page_html.xpath('//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="wbv-duration-display"]/text()'.format(j+1))[0].strip()
+        time_cost =""
+        play_points = re.findall('play_count=(\d+)&', page_html.xpath(
+                '//div[@id="pl_feedlist_index"]//div[@class="card-wrap"][{}]//div[@class="thumbnail"]/a/@action-data'.format(
+                    j + 1))[0])[0]
+        print(user,user_link,content_url,vedio_url,poster_url,play_points,time_cost,repost_user_reposts_count,repost_user_comments_count,repost_user_stars_count,quotedMessage)
+
+
+
+if __name__ == "__main__":
+    down_detail("疯狂的外星人")
